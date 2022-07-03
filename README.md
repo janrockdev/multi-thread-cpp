@@ -1,41 +1,36 @@
 # Multi-thread CPP (Pthread)
 
 ## What are Pthreads?
-POSIX Threads, or Pthreads, is a POSIX standard for threads. The standard, POSIX.1c, Threads extensions (IEEE Std 1003.1c-1995), defines an API for creating and manipulating threads.
-Implementations of the API are available on many Unix-like POSIX systems such as FreeBSD, NetBSD, GNU/Linux, Mac OS X and Solaris, but Microsoft Windows implementations also exist. For example, the pthreads-w32 is available and supports a subset of the Pthread API for the Windows 32-bit platform.
-The POSIX standard has continued to evolve and undergo revisions, including the Pthreads specification. The latest version is known as IEEE Std 1003.1, 2004 Edition.
-Pthreads are defined as a set of C language programming types and procedure calls, implemented with a pthread.h header file. In GNU/Linux, the pthread functions are not included in the standard C library. They are in libpthrea, therefore, we should add -lpthread to link our program.
+1) POSIX Threads, or Pthreads, is a POSIX standard for threads. The standard, POSIX.1c, Threads extensions (IEEE Std 1003.1c-1995), defines an API for creating and manipulating threads.
+2) Implementations of the API are available on many Unix-like POSIX systems such as FreeBSD, NetBSD, GNU/Linux, Mac OS X and Solaris, but Microsoft Windows implementations also exist. For example, the pthreads-w32 is available and supports a subset of the Pthread API for the Windows 32-bit platform.
+3) The POSIX standard has continued to evolve and undergo revisions, including the Pthreads specification. The latest version is known as IEEE Std 1003.1, 2004 Edition.
+4) Pthreads are defined as a set of C language programming types and procedure calls, implemented with a pthread.h header file. In GNU/Linux, the pthread functions are not included in the standard C library. They are in libpthrea, therefore, we should add -lpthread to link our program.
 
 ## The Pthread API
 Pthreads API can be grouped into four:
 
-### Thread management:
+### 1) Thread management:
 Routines that work directly on threads - creating, detaching, joining, etc. They also include functions to set/query thread attributes such as joinable, scheduling etc.
 
-### Mutexes:
+### 2) Mutexes:
 Routines that deal with synchronization, called a "mutex", which is an abbreviation for "mutual exclusion". Mutex functions provide for creating, destroying, locking and unlocking mutexes. These are supplemented by mutex attribute functions that set or modify attributes associated with mutexes.
 
-### Condition variables:
+### 3) Condition variables:
 Routines that address communications between threads that share a mutex. Based upon programmer specified conditions. This group includes functions to create, destroy, wait and signal based upon specified variable values. Functions to set/query condition variable attributes are also included.
 
-### Synchronization:
+### 4) Synchronization:
 Routines that manage read/write locks and barriers.
 
 ## Creating Threads
 
 1) Our main() program is a single, default thread. All other threads must be explicitly created by the programmer.
-
 2) pthread_create creates a new thread and makes it executable. This routine can be called any number of times from anywhere within our code.
-
 3) pthread_create (pthread_t *thread, pthread_attr_t *attr, void *(*start_routine)(void *), void *arg) arguments: 
-
-a) thread: 
+- thread: 
 An identifier for the new thread returned by the subroutine. This is a pointer to pthread_t structure. When a thread is created, an identifier is written to the memory location to which this variable points. This identifier enables us to refer to the thread.
-
-b) attr: 
+- attr: 
 An attribute object that may be used to set thread attributes. We can specify a thread attributes object, or NULL for the default values.
-
-c) start_routine: 
+- start_routine: 
 The routine that the thread will execute once it is created.
 
 ```c++
@@ -45,7 +40,7 @@ void *(*start_routine)(void *)
 We should pass the address of a function taking a pointer to void as a parameter and the function will return a pointer to void. So, we can pass any type of single argument and return a pointer to any type. 
 While using fork() causes execution to continue in the same location with a different return code, using a new thread explicitly provides a pointer to a function where the new thread should start executing.
 
-d) arg: 
+- arg: 
 A single argument that may be passed to start_routine. It must be passed as a void pointer. NULL may be used if no argument is to be passed.
 
 4) The maximum number of threads that may be created by a process is implementation dependent.
@@ -504,7 +499,7 @@ The call to the pthread_spin_lock() will spin until the lock is acquired, and th
 
 ```c++
 // file: thread6.cpp
-// gcc -o thread6 thread6 .cpp -lpthread
+// gcc -o thread6 thread6.cpp -lpthread
  #include <pthread.h>
 
 pthread_spinlock_t slock;
@@ -557,6 +552,8 @@ We need feed the number of threads that need to reach the barrier before any thr
 Each thread calls pthread_barrier_wait() when it reaches the barrier, and the call will return when the number of threads has reached the barrier. The code below shows how the bbefore aquiring the lock just check for queue count :)arrier force the threads to wait until all the threads have been created:
 
 ```c++
+// file: thread7.cpp
+// gcc -o thread7 thread7.cpp -lpthread
 #include <pthread.h>
 #include <stdio.h>
 
@@ -634,6 +631,8 @@ int pthread_mutex_destroy(pthread_mutex_t *m_mutex);
 All of the functions take a pointer to a previously declared object, in this case, pthread_mutex_t. The extra attribute parameter pthread_mutex_init allows us to provide attributes for the mutex, which controls its behavior.
 
 ```c++
+// file: thread8.cpp
+// gcc -o thread8 thread8.cpp -lpthread
 #include <stdio.h>
 #include <unistd.h>
 #include <stdlib.h>
@@ -738,3 +737,287 @@ quit
 Waiting for thread to finish...
 Thread joined
 ```
+
+## Synchronization Pthread Example - Mutexes 3
+The following code calculates the sum of integers from 1 to 100. Each of 5 threads takes care of 20 integers. Each set of integers is separated by the argument we're passing into threadWork() function.
+
+```c++
+// file: thread9.cpp
+// gcc -o thread9 thread9.cpp -lpthread
+#include <stdio.h>
+#include <stdlib.h>
+#include <pthread.h>
+
+typedef struct
+{
+        int *a;
+        int length;
+        int sum;
+} MyData;
+
+#define N 5
+#define L 20
+
+MyData mData;
+pthread_t myThread[N];
+pthread_mutex_t mutex;
+
+void *threadWork(void *arg)
+{
+        /* Define and use local variables for convenience */
+        long offset = (long)arg;
+        int sum = 0;
+        int start = offset * mData.length;
+        int end = start + mData.length;
+
+        /* each thread calculates its sum */
+        for (int i = start; i < end ; i++)  sum += mData.a[i];
+
+        /* mutex lock/unlock */
+        pthread_mutex_lock(&mutex);
+        mData.sum += sum;
+        pthread_mutex_unlock(&mutex);
+
+        pthread_exit((void*) 0);
+}
+
+int main ()
+{
+        void *status;
+
+        /* fill the structure */
+        int *a = (int*) malloc (N*L*sizeof(int));
+        for (int i = 0; i < N*L; i++) a[i] = i + 1;
+        mData.length = L;
+        mData.a = a;
+        mData.sum = 0;
+
+        pthread_mutex_init(&mutex, NULL);
+
+        /* Each thread has its own  set of data to work on. */
+        for(long i=0; i < N; i++)
+                pthread_create(&myThread[i], NULL, threadWork, (void *)i);
+
+        /* Wait on child threads */
+        for(int i=0; i < N; i++) pthread_join(myThread[i], &status);
+
+        /* Results and cleanup */
+        printf ("Sum = %d \n", mData.sum);
+        free (a);
+
+        pthread_mutex_destroy(&mutex); pthread_exit(NULL);
+}
+```
+
+Output is:
+
+```
+Sum = 5050 
+```
+
+## Mutex and Condition Variable
+Condition variable enables threads to communicate with state changes. In other words, a condition variable allows one thread to inform other threads about the changes in the state of a shared resource and allows the other threads to wait for such notification. It allows a thread to sleep(wait) until another thread signals it that it must respond to since some condition has arisen. Without condition variables, the waiting have to do polling to check whether the condition become true.
+
+A condition variable is always used in conjunction with a mutex. While the mutex is there to ensure that only one thread at a time can access the resource, the condition variable is used to signal changes the state variable.
+
+The essence of the condition variable is "signal and wait". The signal operation is a notification of state changes in shared variable to the waiting threads. The wait operation is the way of blocking until such a notification is received.
+
+
+```c++
+// file: thread10.cpp
+// gcc -o thread10 thread10.cpp -lpthread
+#include <pthread.h>
+#include <stdio.h>
+
+pthread_mutex_t mutex;
+pthread_cond_t cond;
+
+int buffer[100];
+
+int loops = 5;
+int length = 0;
+
+void *producer(void *arg) {
+    int i;
+    for (i = 0; i < loops; i++) {
+        pthread_mutex_lock(&mutex);
+        buffer[length++] = i;
+        printf("producer length %d\n", length);
+        pthread_cond_signal(&cond);
+        pthread_mutex_unlock(&mutex);
+    }
+}
+
+void *consumer(void *arg) {
+    int i;
+    for (i = 0; i < loops; i++) {
+        pthread_mutex_lock(&mutex);
+        while(length == 0) {
+            printf(" consumer waiting...\n");
+            pthread_cond_wait(&cond, &mutex);
+        }
+        int item = buffer[--length];
+        printf("Consumer %d\n", item);
+        pthread_mutex_unlock(&mutex);
+    }
+}
+
+int main(int argc, char *argv[])
+{
+
+    pthread_mutex_init(&mutex, 0);
+    pthread_cond_init(&cond, 0);
+
+    pthread_t pThread, cThread;
+    pthread_create(&pThread, 0, producer, 0);
+    pthread_create(&cThread, 0, consumer, 0);
+    pthread_join(pThread, NULL);
+    pthread_join(cThread, NULL);
+
+    pthread_mutex_destroy(&mutex);
+    pthread_cond_destroy(&cond);
+    return 0;
+}
+```
+
+Output is:
+
+```
+producer length 1
+producer length 2
+producer length 3
+producer length 4
+producer length 5
+Consumer 4
+Consumer 3
+Consumer 2
+Consumer 1
+Consumer 0
+```
+
+The pthread_cond_wait(&cond;, &mutex;) does the following:
+
+1) unlock the muext
+2) block the calling thread until another thread signals the condition variable cond
+3) relock mutex
+
+## Using semaphore to enforce a execution ordering of threads
+
+```c++
+// file: thread11.cpp
+// gcc -o thread11 thread11.cpp -lpthread
+#include <pthread.h>
+#include <cstdio>
+
+void *f1()
+{
+    printf("thread 1\n");
+}
+
+void *f2()
+{
+    printf("thread 2\n");
+}
+
+int main()
+{
+    pthread_t myThread[2];
+    pthread_create(&myThread[0], 0, reinterpret_cast<void *(*)(void *)>(f1), 0);
+    pthread_create(&myThread[1], 0, reinterpret_cast<void *(*)(void *)>(f2), 0);
+    pthread_join(myThread[0], 0);
+    pthread_join(myThread[1], 0);
+    return 0;
+}
+```
+
+## Semaphore as a Condition Variable
+Condition variable enables threads to communicate with state changes. In other words, a condition variable allows one thread to inform other threads about the changes in the state of a shared resource and allows the other threads to wait for such notification. It allows a thread to sleep(wait) until another thread signals it that it must respond to since some condition has arisen.
+
+Though we can implement synchronization by controlling thread access to data, condition variables allow threads to synchronize based upon the actual value of data.
+
+A condition variable is always used in conjunction with a mutex. While the mutex provides mutual exclusion for accessing the shared variable, the condition variable is used to signal changes the state variable.
+
+In this section, we will see how to use a semaphore to achieve this effect. Actually, the example in the previous section showed how. But here, we will start from the very simple one. By using a semaphore, we can achieve the similar effect of join(). In the code, the main thread is waiting for the worker thread to finish its task.
+
+```c++
+// file: thread12.cpp
+// gcc -o thread12 thread12.cpp -lpthread
+#include <pthread.h>
+#include <stdio.h>
+#include <semaphore.h>
+
+sem_t s;
+
+void * task(void *param)
+{
+    printf("%s done its task \n", (char *)param);
+
+    // signaling worker's task (printing) is done
+    sem_post(&s);
+
+    return NULL;
+}
+
+int main()
+{
+    // set current semaphore value 0 (the 3rd arg)
+    sem_init(&s, 0, 0);
+
+    printf("main thread started\n");
+
+    pthread_t worker;
+    pthread_create(&worker, 0, task, (void*)"worker thread");
+
+    // wait here for worker thread to finish
+    sem_wait(&s);
+
+    printf("main thread ends here\n");
+
+    return 0;
+}
+```
+
+## Multiprocess
+The main advantage of multiprocess programming is that a failure of one process does not cause all the processes to die. As a result, it might be possible to recover from such failures.
+
+The fork() system call will spawn a new child process which is an identical process to the parent except that has a new system process ID. The process is copied in memory from the parent and a new process structure is assigned by the kernel. The return value of the function is which discriminates the two threads of execution. A zero is returned by the fork function in the child's process.
+
+```c++
+// file: thread13.cpp
+// gcc -o thread13 thread13.cpp -lpthread
+#include <unistd.h>
+#include <stdlib.h>
+#include <sys/wait.h>
+#include <stdio.h>
+
+int main()
+{
+   int status;
+   pid_t pid = fork();
+
+   // Child process will sleep for 10 second
+   if(pid == 0)
+   {
+      execl("/usr/bin/sleep", "/usr/bin/sleep", 10, NULL);
+   }
+   // Parent process will wait for child process to terminate
+   // Then, it will report the exit status of the child process
+   else
+   {
+      waitpid(pid, &status, 0);
+      printf("status = %d\n", status);  // print out ->  status = 65280
+   }
+}
+```
+
+The execl() is used to execute the sleep command.
+
+The waitpid() call is used to wait for state changes in a child of the calling process, and obtain information about the child whose state has changed. A state change is considered to be:
+
+1) the child terminated
+2) the child was stopped by a signal
+3) the child was resumed by a signal
+In the case of a terminated child, performing a wait allows the system to release the resources associated with the child.
+If a wait is not performed, then the terminated child remains in a zombie state.
+
+If a child has already changed state, then it returns immediately. Otherwise it block until either a child changes state or a signal handler interrupts the call.
