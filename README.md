@@ -1,4 +1,4 @@
-# Multi-thread CPP
+# Multi-thread CPP (Pthread)
 
 ## What are Pthreads?
 POSIX Threads, or Pthreads, is a POSIX standard for threads. The standard, POSIX.1c, Threads extensions (IEEE Std 1003.1c-1995), defines an API for creating and manipulating threads.
@@ -455,4 +455,286 @@ thread 2 counter = 9
 thread 2 counter = 10
 thread 2 counter = 11
 thread 1 counter = 11
+```
+
+As we can see, any thread can increment the counter variable at any time. Also we see from the values of the counter, it may have been incremented by other thread while trying to print the value.
+
+## Mutex Attributes
+Though mutexes, by default, are private to a process, they can be shared between multiple processes. To create a mutex that can be shared between processes, we need to set up the attributes for pthread_mutex_init():
+
+```c++
+#include <pthread.h>
+
+int main()
+{
+        pthread_mutex_t myMutex;
+        pthread_mutexattr_t myMutexAttr;
+        pthread_mutexattr_init(&myMutexAttr;);
+        pthread_mutexattr_setpshared(&myMutexAttr;, PTHREAD_PROCESS_SHARED);
+
+        pthread_mutex_init(&myMutex;, &myMutexAttr;);
+        //...
+
+        pthread_mutexattr_destroy(&myMutexAttr;);
+        pthread_mutex_destroy(&myMutex;);
+        return 0;
+}
+```
+
+pthread_mutexattr_setpshared() with a pointer to the attribute structure and the value PTHREAD_PROCESS_SHARED sets the attributes to cause a shared mutex to be created.
+
+Mutexes are not shared between processes by default. Calling pthread_mutexattr_setpshared() with the value PTHREAD_PROCESS_PRIVATE restores the attribute to the default.
+
+These attributes are passed into the call to pthread_mutexattr_init() to set the attributes of the initialized mutex. Once the attributes have been used, they can be disposed of by a call to pthread_mutexattr_destroy().
+
+## Spin Locks
+Spin locks are essentially mutex locks.
+
+A spin lock polls its lock condition repeatedly until that condition becomes true. Spin locks are most often used on multiprocessor systems where the expected wait time for a lock is small. In these situations, it is often more efficient to poll than to block the thread, which involves a Context switch and the updating of thread data structures.
+
+The difference between a mutex lock and a spin lock is that a thread waiting to acquire a spin lock will keep trying to acquire the lock without sleeping and consuming processor resources until it finally acquires the lock. On the contrary, a mutex lock may sleep if it is unable to acquire the lock. But under normal mutex implementation, multex locks will immediately put a thread to sleep when it cannot get the mutex.
+
+The advantage of using spin locks is that they will acquire the lock as soon as it is released, while a mutex lock will need to be woken by the OS before it can get the lock. The disadvantage is that a spin lock will spin on a virtual CPU monopolizing that resource, but a mutex lock will sleep and free the CPU for another thread to use. So, in practice, mutex locks are often implemented to be a hybrid of a spin locks and more traditional mutex locks. This kind of mutx is called adaptive mutex lock.
+
+The call pthread_spin_init(). initializes a spin lock. A spin lock can be shared between processes or private to the process that created it. 
+By passing the value PTHREAD_PROCESS_PRIVATE to the pthread_spin_init(), a spin lock is not shareable. 
+To make it sharable, we need to pass the value PTHREAD_PROCESS_SHARED. The default is set to be private.
+
+The call to the pthread_spin_lock() will spin until the lock is acquired, and the call to the pthread_spin_unlock() will release the lock. The call pthread_spin_destroy() releases any resources used by the lock.
+
+```c++
+// file: thread6.cpp
+// gcc -o thread6 thread6 .cpp -lpthread
+ #include <pthread.h>
+
+pthread_spinlock_t slock;
+
+void splock()
+{
+    int i = 100;
+    while(i>0) {
+        pthread_spin_lock(&slock);
+        i--;
+        pthread_spin_unlock(&slock);
+    }
+}
+
+int main()
+{
+    pthread_spin_init(&slock, PTHREAD_PROCESS_PRIVATE);
+    splock();
+    pthread_spin_destroy(&slock);
+    return 0;
+}
+```
+
+To use process resources more efficiently, we can use pthread_spin_trylock(). This call will attempt to acquire the lock, however, it will immediately return whether or not the lock is acquired rather than keep spinning:
+
+```c++
+void splock()
+{
+    int i = 0;
+    while(i == 0) {
+        pthread_spin_trylock(&slock;);
+        i++;
+        pthread_spin_unlock(&slock;);
+    }
+}
+```
+
+## Barriers
+As one of the synchronization methods, a barrier tells a group of threads or processes must stop at the barrier and cannot proceed until all other threads/processes reach this barrier.
+
+Here we'll address the classic barrier that its construct define the set of participating processes/threads statically. This is usually done either at program startup or when a barrier like the Pthreads barrier is instantiated.
+
+Unlike the static barriers, to support more dynamic programming paradigms like fork/join parallelism, the sets of participants have to be dynamic. Thus, the set of processes/threads participating in a barrier operation needs to be able to change over time. But in this section, we will discuss only the static barriers.
+
+We can create a barrier by calling pthread_barrier_init(). It initializes the barrier and it takes three parameters:
+
+A pointer to the barrier to be initialized.
+To determine whether the barrier is private or can be shared, it takes an optional attributes structure.
+We need feed the number of threads that need to reach the barrier before any threads are released.
+Each thread calls pthread_barrier_wait() when it reaches the barrier, and the call will return when the number of threads has reached the barrier. The code below shows how the bbefore aquiring the lock just check for queue count :)arrier force the threads to wait until all the threads have been created:
+
+```c++
+#include <pthread.h>
+#include <stdio.h>
+
+pthread_barrier_t b;
+
+void task(int param)
+{
+    int id = (int)param;
+    printf("before the barrier %d\n", id);
+    pthread_barrier_wait(&b);
+    printf("after the barrier %d\n", id);
+}
+
+int main()
+{
+    int nThread = 5;
+    int i;
+
+    pthread_t thread[nThread];
+    pthread_barrier_init(&b, 0, nThread);
+    for(i = 0; i < nThread; i++)
+        pthread_create(&thread[i], 0, reinterpret_cast<void *(*)(void *)>(task), (void*)i);
+    for(i = 0; i < nThread; i++)
+        pthread_join(thread[i], 0);
+    pthread_barrier_destroy(&b);
+    return 0;
+}
+```
+Output below shows all the threads arrive and leave.
+
+Output is:
+```
+before the barrier 0
+before the barrier 1
+before the barrier 2
+before the barrier 4
+before the barrier 3
+after the barrier 3
+after the barrier 0
+after the barrier 4
+after the barrier 2
+after the barrier 1
+```
+
+If we did not set the barrier, the arrival and leave would have been mixed:
+
+```
+//comment line 10
+    // pthread_barrier_wait(&b);
+```
+
+```
+before the barrier 0
+after the barrier 0
+before the barrier 4
+before the barrier 2
+after the barrier 4
+before the barrier 3
+after the barrier 3
+after the barrier 2
+before the barrier 1
+after the barrier 1
+```
+
+## Synchronization Pthread Example - Mutexes 2
+The code below shows another example of synchronizing access with mutexes. To control access, we lock a mutex before entering the section of the code, and then unlock it when we have finished.
+
+```c++
+int pthread_mutex_init(pthread_mutex_t *m_mutex, const pthread_mutexattr_t *mutexattr);
+int pthread_mutex_lock(pthread_mutex_t *m_mutex);
+int pthread_mutex_unlock(pthread_mutex_t *m_mutex);
+int pthread_mutex_destroy(pthread_mutex_t *m_mutex);
+```
+
+All of the functions take a pointer to a previously declared object, in this case, pthread_mutex_t. The extra attribute parameter pthread_mutex_init allows us to provide attributes for the mutex, which controls its behavior.
+
+```c++
+#include <stdio.h>
+#include <unistd.h>
+#include <stdlib.h>
+#include <string.h>
+#include <pthread.h>
+#include <semaphore.h>
+
+void *thread_fnc(void * arg);
+
+pthread_mutex_t my_mutex;
+char my_string[100];  /* shared variable */
+int time_to_exit = 0;
+
+int main()
+{
+        int ret;
+        pthread_t my_thread;
+        void *ret_join;
+
+        ret = pthread_mutex_init(&my_mutex, NULL);
+        if(ret != 0) {
+                perror("mutex init failed\n");
+                exit(EXIT_FAILURE);
+        }
+
+        ret =  pthread_create(&my_thread, NULL, thread_fnc, NULL);
+        if(ret != 0) {
+                perror("pthread_create failed\n");
+                exit(EXIT_FAILURE);
+        }
+        pthread_mutex_lock(&my_mutex);
+        printf("Type in some characters. Enter 'quit' to finish\n");
+        while(!time_to_exit) {
+                fgets(my_string, 100, stdin);
+                pthread_mutex_unlock(&my_mutex);
+                while(1) {
+                        if(my_string[0] != '\0') {
+                                pthread_mutex_unlock(&my_mutex);
+                                sleep(1);
+                        }
+                        else
+                                break;
+                }
+        }
+        pthread_mutex_unlock(&my_mutex);
+
+        printf("Waiting for thread to finish...\n");
+        ret = pthread_join(my_thread, &ret_join);
+        if(ret != 0) {
+                perror("pthread_join failed");
+                exit(EXIT_FAILURE);
+        }
+        printf("Thread joined\n");
+        pthread_mutex_destroy(&my_mutex);
+        exit(EXIT_SUCCESS);
+}
+
+void *thread_fnc(void *arg)
+{
+        sleep(1);
+        pthread_mutex_lock(&my_mutex);
+        while(strncmp("quit", my_string, 4) != 0) {
+                printf("You typed in %d characters\n",strlen(my_string)-1);
+                my_string[0]='\0';
+                pthread_mutex_unlock(&my_mutex);
+                sleep(1);
+                pthread_mutex_lock(&my_mutex);
+                if(my_string[0] != '\0') {
+                        pthread_mutex_unlock(&my_mutex);
+                        sleep(1);
+                        pthread_mutex_lock(&my_mutex);
+                }
+        }
+        time_to_exit = 1;
+        my_string[0] = '\0';
+        pthread_mutex_unlock(&my_mutex);
+        pthread_exit(NULL);
+}
+```
+
+Output is:
+```
+Type in some characters. Enter 'quit' to finish
+a
+You typed in 1 characters
+aa
+aaa
+You typed in 2 characters
+aaa
+aaaaYou typed in 3 characters
+aa
+aa
+aa
+You typed in 3 characters
+aaa
+You typed in 4 characters
+You typed in 2 characters
+You typed in 2 characters
+You typed in 2 characters
+You typed in 3 characters
+quit
+Waiting for thread to finish...
+Thread joined
 ```
